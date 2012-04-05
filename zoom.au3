@@ -9,7 +9,7 @@
 ;#Include <Misc.au3>;for _IsPressed
 
 #Region version and program info
-Global Const $g_info_version = "0.4.5"
+Global Const $g_info_version = "0.4.7"
 Global Const $g_info_author = "Trevor Pearson"
 Global Const $g_info_parameters = "none: just input file chosen via gui"
 Global Const $g_info_instructions = "This program reads a txt file and will type strings for the user.  Basically, it semi-automate complex tasks.  Prompts are also inputed from the file to explain what to do next."
@@ -30,7 +30,7 @@ Global $zoomPath
 
 $zoomPath = RegRead("HKEY_CURRENT_USER\Software\Zoom","zoomPath")
 if $zoomPath =="" Then
-	
+	RegWrite("HKEY_CURRENT_USER\Software\Zoom","zoomPath","REG_SZ",$zoomPath)
 	$zoomPath = InputBox("Zoom","Define your new zoom folder","J:\zoom")
 	if $zoomPath == "" Then
 		Exit
@@ -42,11 +42,11 @@ if FileExists($zoomPath) == 0 Then
 		Exit
 	EndIf		
 EndIf
-RegWrite("HKEY_CURRENT_USER\Software\Zoom","zoomPath","REG_SZ",$zoomPath)
+
+FileExtAssoc("zoo", "C:\zoom\zoom.exe %1")
 
 
-
-Global $fileName = $zoomPath&"\pugsUpgrade.txt"
+Global $fileName = $zoomPath&"\pugsUpgrade.zoo"
 ;$dll = DllOpen("user32.dll")
 dim $fileVersion = 0
 
@@ -194,69 +194,7 @@ EndFunc
 
 
 
-;#####################
-;#Version 1 Functions#
-;#####################
-#region
-Func pasteNext1()
-	;disable hotkeys
-	
-	HotKeySet($HK_send)
-	HotKeySet($HK_dec)
-	HotKeySet($HK_inc)
-	
-	
-	Send(GUICtrlRead($guiCmd)) ;grab the cmd one
-	forward1()
-	
-	;enable hotkeys
-	HotKeySet($HK_send,"pasteNext"&$fileVersion)
-	HotKeySet($HK_dec,"back"&$fileVersion)
-	HotKeySet($HK_inc,"forward"&$fileVersion)
-	
-	
-	send("{CTRLUP}")
-EndFunc
 
-
-Func forward1()
-	
-	$x = $x + 2
-	if $x > $aSize Then
-		$x = $aSize - 1
-	Else
-		updateGui()
-	EndIf
-;~ 	updateGui()
-	send("{CTRLUP}")
-
-EndFunc
-	
-Func back1()
-
-	$x = $x - 2	
-	if $x < 1 Then
-		$x = 1
-	EndIf
-	updateGui()
-	send("{CTRLUP}")
-
-EndFunc
-
-Func updateGui1()
-	GUICtrlSetData ( $guiTask, stringtrimleft($astrings[$x],4) )
-	GUICtrlSetData ( $guiCmd, stringtrimleft($astrings[$x+1],4) )		
-	GUICtrlSetData ( $guiCmdNum, ($x-1)/2 + 1 )		
-EndFunc
-
-Func exitButton1()
-	send("{CTRLUP}")
-	Exit
-EndFunc
-#endregion
-;#####################
-;#Version 2 Functions#
-;#####################
 #Region GUI Functions (Var1Toggle,TaskChange,cmdChange,changeZoomPath)
 Func displayHelp()
 	
@@ -655,13 +593,13 @@ EndFunc
 func createNewZoom()
 	Local $counter = 1
 ;~ 	$fileName = "c:\zoom\newzoom.txt"
-	$fileName = InputBox("New Zoom File", "Enter the path and name of the new zoom file",$zoomPath&"\newzoom1.txt")
+	$fileName = InputBox("New Zoom File", "Enter the path and name of the new zoom file",$zoomPath&"\newzoom1.zoo")
 	if $fileName = "" Then
 		return 1
 	EndIf
 	
 	while FileExists($fileName)
-		$fileName = InputBox("New Zoom File", "File Exists: try again",$zoomPath&"\newzoom1.txt")
+		$fileName = InputBox("New Zoom File", "File Exists: try again",$zoomPath&"\newzoom1.zoo")
 	
 
 	WEnd
@@ -680,7 +618,7 @@ EndFunc
 
 Func loadZoom()
 	
-	$fileName = FileOpenDialog("ZOOM : Choose Input File",$zoomPath & "\","Text files (*.txt)",3)
+	$fileName = FileOpenDialog("ZOOM : Choose Input File",$zoomPath & "\","Text files (*.zoo;*.txt)",3)
 
 	If @error Then
 		return @error
@@ -920,13 +858,62 @@ Func zoomMain()
 ;~ 	WEnd
 EndFunc
 Func manageModes()
-   Global $guiModes = GUICreate("Zoom - Manage Modes")
+   Local $rowNum = 10
+   Local $colNum = 4
+   Local $colSep = 120, $rowSep = 30
+   Global $guiModes = GUICreate("Zoom - Manage Modes",100+$colSep*$colNum,60+$rowSep*$rowNum)
+   Local $columns[5][20]
+   Local $col = 0
+   Local $row=0
+   
+   
+   While $col <4
+	  $row = 0
+	  while $row <10
+		 if $row==0 Then
+			$columns[$col][$row] = GUICtrlCreateInput("Name"&$col,70+($colSep*$col),35+($rowSep*$row),60)
+		 ElseIf $row==1 Then
+			$columns[$col][$row] = GUICtrlCreateInput("code_"&$col&"_"&$row,50+($colSep*$col),35+($rowSep*$row),100)
+		 Else
+			$columns[$col][$row] = GUICtrlCreateInput("",50+($colSep*$col),35+($rowSep*$row),100)
+		 EndIf
+		 $row+=1
+		 
+	  WEnd
+	  $col+=1
+   WEnd
+	  
+   
    
    GUISetState(@SW_SHOW)
    $test = GUISetOnEvent($GUI_EVENT_CLOSE, "exitModes",$guiModes)
    
-   $guiModes_info = GUICtrlCreateLabel("Mode Special Character: $",50,10)
+   $guiModes_info = GUICtrlCreateLabel("Mode Special Prefix Character: $",50,10)
+   $guuiModes_save = GUICtrlCreateButton("Save Modes",245,330)
+   GUICtrlSetOnEvent(-1,"modes_saveArray")
+EndFunc
+
+Func modes_saveArray()
    
+   local $ctr = 0
+   
+   
+;~    while $ctr < $colNum
+;~ 	  $row = 0
+;~ 	  while $row <10
+;~ 		 if $row==0 Then
+;~ 			$columns[$col][$row]
+;~ 		 Else
+;~ 			$columns[$col][$row]
+;~ 		 EndIf
+;~ 		 $row+=1
+;~ 		 
+;~ 	  WEnd
+;~ 	  $col+=1
+;~    WEnd
+	  
+   GUIDelete($guiModes)
+
 EndFunc
 
    
@@ -1032,6 +1019,14 @@ Func comboCmdChange()
 				EndIf	
 			EndIf
 	EndIf
+EndFunc
+
+;~ FileExtAssoc("zoo", "C:\zoom\zoom.exe %1")
+
+func FileExtAssoc($sExt, $sApplication)
+    RunWait(@COMSPEC & " /c ASSOC ." & $sExt & "=Zoom", "", @SW_HIDE)
+    RunWait(@COMSPEC & " /c FTYPE Zoom=" & $sApplication , "", @SW_HIDE)
+;~     MsgBox(0,"File Extension Application Association",'"' & $sExt & '"is now asscoiated with "' & $sApplication & '"',3)
 EndFunc
 
 
