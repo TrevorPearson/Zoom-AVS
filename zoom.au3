@@ -9,7 +9,7 @@
 ;#Include <Misc.au3>;for _IsPressed
 
 #Region version and program info
-Global Const $g_info_version = "0.4.7"
+Global Const $g_info_version = "0.4.8"
 Global Const $g_info_author = "Trevor Pearson"
 Global Const $g_info_parameters = "none: just input file chosen via gui"
 Global Const $g_info_instructions = "This program reads a txt file and will type strings for the user.  Basically, it semi-automate complex tasks.  Prompts are also inputed from the file to explain what to do next."
@@ -661,43 +661,10 @@ Func zoomMain()
 	;####################
 	;#Check file verison#
 	;####################
-	if stringleft($astrings[1],4) == "pmt=" Then
-		$fileVersion = 1
-	ElseIf StringLeft($astrings[1],StringLen("zoomVersion=")) == "zoomVersion=" Then
-		$fileVersion = StringTrimLeft($astrings[1],StringLen("zoomVersion="))
-;~ 		if $astrings[0] > 2 And StringLeft($astrings[2],5) == "var1=" then 
-;~ 			$var1On = 1
-;~ 			$var1Label = StringTrimLeft($astrings[2],5)
-;~ 		EndIf	
-		$lineCounter = 0
-		While ($lineCounter < $aSize)
-			if StringLeft($astrings[$lineCounter],5) == "var1=" then 
-				$var1On = 1
-				$var1Label = StringTrimLeft($astrings[$lineCounter],5)
-			EndIf	
-			
-			if StringLeft($astrings[$lineCounter],6) == "modes=" then 
-				$modeSwitch = 1
-				$modes = StringSplit(StringTrimLeft($astrings[$lineCounter],6),"~")
-;~ 				MsgBox(0,"after trim",StringTrimLeft($astrings[$lineCounter],6),"~")
-;~ 				MsgBox(0,"modesnum",$modes[0])
-			elseif StringLeft($astrings[$lineCounter],4) == "mode" then 
-				$temp = StringSplit(StringTrimLeft($astrings[$lineCounter],6),"~")
-				for $count = 1 To $temp[0]
-					$modeList[$modeCount][$count-1] = $temp[$count]
-				Next
-				$modeCount+=1
-			EndIf
-			
-			if StringInStr($astrings[$lineCounter],"*nextCommand*") Then
-				ExitLoop 
-			EndIf
-			
-			$lineCounter+=1
-		WEnd
-		
-		
-			
+	If StringLeft($astrings[1],StringLen("zoomVersion=")) == "zoomVersion=" Then
+		$fileVersion = StringTrimLeft($astrings[1],StringLen("zoomVersion="))		 
+		loadVars()
+		loadModes()			
 	Else
 		MsgBox(0,"ERROR","File Fomat not recognized")
 		Exit
@@ -857,32 +824,110 @@ Func zoomMain()
 ;~ 		sleep(100)
 ;~ 	WEnd
 EndFunc
+Func loadVars()
+   local $lineCounter = 0
+   While ($lineCounter < $aSize)
+	  if StringLeft($astrings[$lineCounter],5) == "var1=" then 
+		 $var1On = 1
+		 $var1Label = StringTrimLeft($astrings[$lineCounter],5)
+	  EndIf	
+			
+	  if StringInStr($astrings[$lineCounter],"*nextCommand*") Then
+		 ExitLoop 
+	  EndIf   
+	  $lineCounter+=1
+   WEnd
+EndFunc
+func loadModes()
+   local $lineCounter = 0
+   While ($lineCounter < $aSize)
+		 
+	  if StringLeft($astrings[$lineCounter],6) == "modes=" then 
+		 $modeSwitch = 1
+		 $modes = StringSplit(StringTrimLeft($astrings[$lineCounter],6),"~")
+	  elseif StringLeft($astrings[$lineCounter],4) == "mode" then 
+		 $temp = StringSplit(StringTrimLeft($astrings[$lineCounter],6),"~")
+		 for $count = 1 To $temp[0]
+			$modeList[$modeCount][$count-1] = $temp[$count]
+		 Next
+		 $modeCount+=1
+	  EndIf
+		 
+	  if StringInStr($astrings[$lineCounter],"*nextCommand*") Then
+		  ExitLoop 
+	  EndIf
+	  
+	  $lineCounter+=1
+	 WEnd
+
+EndFunc
+
 Func manageModes()
    Local $rowNum = 10
    Local $colNum = 4
    Local $colSep = 120, $rowSep = 30
    Global $guiModes = GUICreate("Zoom - Manage Modes",100+$colSep*$colNum,60+$rowSep*$rowNum)
-   Local $columns[5][20]
+   Global $mode_columns[5][20]
    Local $col = 0
    Local $row=0
+   Global $mode_maxRow = 10
+   Global $mode_maxCol = 4
+   local $ctr = 0
+   local $modeStart = -1
+   local $modeEnd = -1
    
+;~    MsgBox(0,"gar",stringtrimleft($astrings[2],6))
+
    
-   While $col <4
-	  $row = 0
-	  while $row <10
-		 if $row==0 Then
-			$columns[$col][$row] = GUICtrlCreateInput("Name"&$col,70+($colSep*$col),35+($rowSep*$row),60)
-		 ElseIf $row==1 Then
-			$columns[$col][$row] = GUICtrlCreateInput("code_"&$col&"_"&$row,50+($colSep*$col),35+($rowSep*$row),100)
-		 Else
-			$columns[$col][$row] = GUICtrlCreateInput("",50+($colSep*$col),35+($rowSep*$row),100)
-		 EndIf
-		 $row+=1
-		 
-	  WEnd
-	  $col+=1
+   while $astrings[$ctr]<>"*nextCommand*"
+	  if StringLeft($astrings[$ctr],6)=="modes=" Then
+		 $modeStart = $ctr
+;~ 		 ExitLoop()
+	  EndIf
+	  $ctr+=1
    WEnd
+   $modeEnd = $ctr
+   
+   if $modeStart == -1 Then
 	  
+	  While $row <$mode_maxRow ;this should really be until *nextCommand* is hit	  
+		 $col = 0
+		 while $col <$mode_maxCol
+			
+			if $row==0 Then
+			   $mode_columns[$col][$row] = GUICtrlCreateInput("Name",70+($colSep*$col),35+($rowSep*$row),60)		 
+			Else
+			   $mode_columns[$col][$row] = GUICtrlCreateInput("string",50+($colSep*$col),35+($rowSep*$row),100)
+			EndIf
+			$col+=1			
+		 WEnd
+		 $row+=1
+	  WEnd
+   Else
+	  $tempHead = StringSplit(stringtrimleft($astrings[$modeStart],6),"~")
+	  $mode_maxCol = $tempHead[0]
+;~ 	  MsgBox(0,"$modeEnd-$modeStart",$modeEnd-$modeStart)
+	  $mode_maxRow = $modeEnd-$modeStart
+   
+   ;~    Not(StringLeft($astrings[$ctr],6)=="modes=")
+	  
+	  
+   ;~    MsgBox(0,"echo",$astrings[2])
+	  While $row <$mode_maxRow ;this should really be until *nextCommand* is hit	  
+		 $col = 0
+		 while $col <$mode_maxCol
+			$tempA = StringSplit(stringtrimleft($astrings[$row+$modeStart],6),"~")
+			if $row==0 Then
+			   $mode_columns[$col][$row] = GUICtrlCreateInput($tempA[$col+1],70+($colSep*$col),35+($rowSep*$row),60)		 
+			Else
+			   $mode_columns[$col][$row] = GUICtrlCreateInput($tempA[$col+1],50+($colSep*$col),35+($rowSep*$row),100)
+			EndIf
+			$col+=1			
+		 WEnd
+		 $row+=1
+	  WEnd
+	  
+   EndIf
    
    
    GUISetState(@SW_SHOW)
@@ -895,24 +940,60 @@ EndFunc
 
 Func modes_saveArray()
    
+   Local $col = 0
+   Local $row=0
    local $ctr = 0
+   local $saveValue = ""
+   ;$mode_maxRow
+   ;$mode_maxCol
    
-   
-;~    while $ctr < $colNum
-;~ 	  $row = 0
-;~ 	  while $row <10
-;~ 		 if $row==0 Then
-;~ 			$columns[$col][$row]
-;~ 		 Else
-;~ 			$columns[$col][$row]
-;~ 		 EndIf
-;~ 		 $row+=1
-;~ 		 
-;~ 	  WEnd
-;~ 	  $col+=1
-;~    WEnd
+   ;delete all mode data
+   while $astrings[$ctr]<>"*nextCommand*"
+	  if StringLeft($astrings[$ctr],4)=="mode" Then
+		 _ArrayDelete($astrings,$ctr)
+		 $astrings[0] -=1
+	  Else
+		$ctr+=1 
+	  EndIf
 	  
+   WEnd
+   $aSize = $astrings[0]
+   
+   ;gather new mode data and save it
+   
+   While $row <$mode_maxRow ;this should really be until *nextCommand* is hit	  
+		 $col = 0
+		 if $row==0 Then
+			   $saveValue="modes="
+		 Else
+			   $saveValue="mode"&$row&"="			   
+		 EndIf
+		 while $col <$mode_maxCol
+						
+;~ 			$mode_columns[$col][$row] = GUICtrlCreateInput($tempA[$col+1],50+($colSep*$col),35+($rowSep*$row),100)
+			$saveValue=$saveValue&GUICtrlRead($mode_columns[$col][$row])
+			
+			if $col+1<$mode_maxCol Then
+			   $saveValue=$saveValue&"~"
+			EndIf
+			
+			
+			$col+=1			
+		 WEnd		 
+		 _ArrayInsert($astrings,$row+2,$saveValue)
+		 $astrings[0] +=1
+		 $aSize = $astrings[0]
+		 
+		 $row+=1
+	  WEnd
+   $fileChanged = 1
+   GUICtrlSetState($menuitem_save, $GUI_ENABLE)
+;~    _ArrayDisplay($astrings)
+
+   
    GUIDelete($guiModes)
+   initialize2()
+   
 
 EndFunc
 
