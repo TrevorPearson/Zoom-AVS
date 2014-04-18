@@ -1,0 +1,13 @@
+zoomVersion=2
+*nextCommand*
+pmt=Launch Notepad
+RUN=notepad.exe
+*nextCommand*
+pmt=Type the date
+STR={F5}{Enter}
+*nextCommand*
+pmt=Save the file
+STR=^s
+*nextCommand*
+pmt=Exit notepad
+STR=!{F4}

@@ -1,0 +1,10 @@
+zoomVersion=2
+*nextCommand*
+pmt=say Hello world
+STR=Hello World{enter}
+*nextCommand*
+pmt=say hello
+STR=hello again{enter}
+*nextCommand*
+pmt=Say Goodbye
+STR=Goodbye World
