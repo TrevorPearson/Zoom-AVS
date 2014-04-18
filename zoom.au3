@@ -9,9 +9,9 @@
 ;#Include <Misc.au3>;for _IsPressed
 
 #Region version and program info
-Global Const $g_info_version = "0.4.8"
+Global Const $g_info_version = "0.4.9"
 Global Const $g_info_author = "Trevor Pearson"
-Global Const $g_info_parameters = "none: just input file chosen via gui"
+Global Const $g_info_parameters = "Optional: first arg can point to a zoom instruction (.zoo or .txt)"
 Global Const $g_info_instructions = "This program reads a txt file and will type strings for the user.  Basically, it semi-automate complex tasks.  Prompts are also inputed from the file to explain what to do next."
 if $CmdLine[0] == 1 Then
 	if $CmdLine[1] == "/?" Then
@@ -34,16 +34,18 @@ if $zoomPath =="" Then
 	$zoomPath = InputBox("Zoom","Define your new zoom folder","J:\zoom")
 	if $zoomPath == "" Then
 		Exit
-	EndIf	
+	EndIf
 EndIf
 if FileExists($zoomPath) == 0 Then
 	if DirCreate($zoomPath)==0 Then
 		MsgBox(0,"ERROR","Failed to create directory: "&$zoomPath)
 		Exit
-	EndIf		
+	EndIf
 EndIf
 
-FileExtAssoc("zoo", "C:\zoom\zoom.exe %1")
+if (RegRead("HKEY_CLASSES_ROOT\.zoo","")<>"Zoom") Then ;this should be less hostile
+   FileExtAssoc("zoo", "C:\zoom\zoom.exe %1")
+EndIf
 
 
 Global $fileName = $zoomPath&"\pugsUpgrade.zoo"
@@ -64,6 +66,8 @@ dim $var1Label = "testLabel"
 dim $var1On = 0
 Global $menujump_link[10]
 Global $menujump = GUICtrlCreateMenu("Jump to...")
+Global $mode_rowsDeletes[20]
+Global $mode_colDeletes[4]
 ;##########################;
 
 Global $newFileText ="zoomVersion=2"&@CRLF&"*nextCommand*"&@CRLF&"pmt=created new file: input the task here"&@CRLF&"STR=insert the text to be copied here"
@@ -93,7 +97,7 @@ $OPTION_alwaysSave = False
 global $modeSwitch = 0
 global $modes = StringSplit("", ",")
 Global $currentMode = 0
-global $modeList[10][5]
+global $modeList[10][10];second number is max number of modes
 global $modeCount = 0
 ;##################
 
@@ -108,7 +112,7 @@ if $CmdLine[0] == 1 and FileExists($CmdLine[1]) Then
 	if WinExists("ZOOM CMD Window") Then
 		WinClose("ZOOM CMD Window")
 	EndIf
-	
+
 	zoomMain()
 Else
 	zoomPre()
@@ -144,7 +148,7 @@ Func exitButton()
 	if $fileVersion == 1 Then
 ;~ 		MsgBox(0,"file version is",$fileVersion)
 		exitButton1()
-	ElseIf $fileVersion >= 2 Then		
+	ElseIf $fileVersion >= 2 Then
 ;~ 		MsgBox(0,"file version is",$fileVersion)
 		exitButton2()
 	Else
@@ -153,7 +157,7 @@ Func exitButton()
 EndFunc
 
 Func saveZoom() ;save the zoom file
-	
+
 	If Not _FileWriteFromArray($fileName,$astrings,1) Then
 		MsgBox(4096,"Error", " Error writing array to file     error:" & @error)
 	EndIf
@@ -162,16 +166,16 @@ Func saveZoom() ;save the zoom file
 
 EndFunc
 Func saveAsZoom()
-	
+
 EndFunc
 Func alwaysSaveOption() ;turn the alwaysSave option on
-	if $OPTION_alwaysSave Then	
+	if $OPTION_alwaysSave Then
 		GUICtrlSetState($menuitem_alwaysSave, $GUI_UNCHECKED)
 		GUICtrlSetState($guiWritePmt, $GUI_SHOW)
 		GUICtrlSetState($guiWriteCmd, $GUI_SHOW)
 		$OPTION_alwaysSave = False
 	Else
-		GUICtrlSetState($menuitem_alwaysSave, $GUI_CHECKED)		
+		GUICtrlSetState($menuitem_alwaysSave, $GUI_CHECKED)
 		GUICtrlSetState($guiWritePmt, $GUI_HIDE)
 		GUICtrlSetState($guiWriteCmd, $GUI_HIDE)
 		$OPTION_alwaysSave = True
@@ -197,13 +201,13 @@ EndFunc
 
 #Region GUI Functions (Var1Toggle,TaskChange,cmdChange,changeZoomPath)
 Func displayHelp()
-	
+
 ;~ 	dim $HK_send = "^w"
 ;~ 	dim $HK_inc = "^e"
 ;~ 	dim $HK_dec = "^q"
 	$hokeyString = "Hotkeys:"&@CRLF&"{ctrl}w  : Paste Command String and Go to Next Task"&@CRLF&"{ctrl}e  : Skip to Next Task"&@CRLF&"{ctrl}q  : Go back a Task"&@CRLF&@CRLF&"The different command types are"&@CRLF&"STR - this just types the string in"&@CRLF&"RUN - this runs the program just like a cmd line"&@CRLF&"CPY - This copies 1 file to another spot, use > in the center"&@CRLF&"RMV - This Removes the specified file. Be careful this accepts a * arg"
 	$helpString = "Zoom is a program created to help automate simple and complex tasks.  It may be hard to get use to at first but can help quite a bit" &@CRLF
-	
+
 	MsgBox(0,"Zoom Help",$helpString &@CRLF& $hokeyString)
 
 
@@ -216,8 +220,8 @@ Func var1Toggle()
 	Else
 		$var1On = 0
 	EndIf
-	
-	
+
+
 	if $var1On == 0 Then
 		$fileChanged = 1
 		GUICtrlSetState($menuitem_save, $GUI_ENABLE)
@@ -226,30 +230,43 @@ Func var1Toggle()
 		$aSize = $astrings[0]
 
 	;~ 	MsgBox(0,"astrings Size",$astrings[0])
-	
+
 		GUICtrlSetState($guiVar1Input,$GUI_HIDE)
 		GUICtrlSetState($guiVar1Label,$GUI_HIDE)
 		GUICtrlSetState($guiVar1preLabel,$GUI_HIDE)
 
-		
+
 ;~ 		GUICtrlSetState($guiVar1Toggle,$GUI_SHOW)
-		
+
 	Else
-		$varName = InputBox("Zoom","enter the new Vars name","var1")
+		$varName = InputBox("Zoom","Enter the new var's name","var1")
 		_ArrayInsert($astrings,2,"var1="&$varName)
 		GUICtrlSetState($menuitem_save, $GUI_ENABLE)
 		$fileChanged = 1
-		
+
 		$astrings[0] +=1
 		$aSize = $astrings[0]
 		GUICtrlSetState($guiVar1Input,$GUI_SHOW)
 		GUICtrlSetState($guiVar1Label,$GUI_SHOW)
 		GUICtrlSetState($guiVar1preLabel,$GUI_SHOW)
-		
+
 		GUICtrlSetData($guiVar1Label,$varName)
-		
+
+		;Hide this if it's a password
+		if (StringInStr($varName,"password")) Then
+			$stats = ControlGetPos("","",$guiVar1Input)
+			GUICtrlDelete($guiVar1Input)
+			$guiVar1Input = GUICtrlCreateInput("",$stats[0],$stats[1],100,-1,$ES_PASSWORD)
+
+		 Else
+			$stats = ControlGetPos("","",$guiVar1Input)
+			GUICtrlDelete($guiVar1Input)
+			$guiVar1Input = GUICtrlCreateInput("",$stats[0],$stats[1],100)
+		EndIf
+
+
 ;~ 		GUICtrlSetState($guiVar1Toggle,$GUI_HIDE)
-		
+
 	EndIf
 EndFunc
 
@@ -257,66 +274,66 @@ Func taskChange()
 	if $phase2 ==1 Then  ;$pmt_lastChecked
 		if StringCompare($pmt_lastChecked,GUICtrlRead($guiTask)) Then
 			if StringCompare(StringTrimLeft($astrings[$x+1],4),GUICtrlRead($guiTask))==0 Then
-				
+
 				If $OPTION_alwaysSave == True Then
 					savePmt2()
 				Else
 					GUICtrlSetBkColor($guiWritePmt,0xF2F2ED  )
-				EndIf					
+				EndIf
 			Else
-				
+
 				If $OPTION_alwaysSave == True Then
 					savePmt2()
 				Else
 					GUICtrlSetBkColor($guiWritePmt,0xff0000)
-				EndIf	
+				EndIf
 			EndIf
-		$pmt_lastChecked = GUICtrlRead($guiTask)		
+		$pmt_lastChecked = GUICtrlRead($guiTask)
 		EndIf
 	EndIf
 EndFunc
 Func cmdChange()
-   
-   
+
+
    if $phase2 ==1 Then
 	  local $currentCmd = GUICtrlRead($guiComboCmdTypes)
 	  local $prevCmd = StringLeft($astrings[$cmdNumbers[$cmdNum]+2],3)
 ;~ 		MsgBox(0,"grr",GUICtrlRead($guiTask))
 		if StringCompare($cmd_lastChecked,$currentCmd&"="&GUICtrlRead($guiCmd)) Then
 			if StringCompare($astrings[$x+2],$currentCmd&"="&GUICtrlRead($guiCmd))==0 Then
-				
+
 				If $OPTION_alwaysSave == True Then
 					saveCmd2()
 				Else
 					GUICtrlSetBkColor($guiWriteCmd,0xF2F2ED)
-				EndIf				
+				EndIf
 			Else
-				
+
 				If $OPTION_alwaysSave == True Then
 					saveCmd2()
 				Else
 					GUICtrlSetBkColor($guiWriteCmd,0xff0000)
-				EndIf	
+				EndIf
 			EndIf
-		$cmd_lastChecked = $currentCmd&"="&GUICtrlRead($guiCmd)				
+		$cmd_lastChecked = $currentCmd&"="&GUICtrlRead($guiCmd)
 		EndIf
 	EndIf
 EndFunc
 
 Func changeZoomPath()
-	
+
 	$zoomPath_old = $zoomPath
-	
+
 	$zoomPath = InputBox("Zoom","Define your new zoom folder",$zoomPath_old)
 	While $zoomPath == ""
 		$zoomPath = InputBox("Zoom","You must define a zoom folder",$zoomPath_old)
-	WEnd	
+	WEnd
 	$fileName = $zoomPath & StringTrimLeft($fileName,stringlen($zoomPath_old))
 	if FileExists($zoomPath) == 0 Then
 		if DirCreate($zoomPath)==0 Then
 			MsgBox(0,"ERROR","Failed to create directory: "&$zoomPath)
 			Exit
-		EndIf		
+		EndIf
 	EndIf
 	RegWrite("HKEY_CURRENT_USER\Software\Zoom","zoomPath","REG_SZ",$zoomPath)
 
@@ -326,7 +343,7 @@ EndFunc
 
 #Region Operations (Initialize,Paste,Next,Previous,insert,delete,save,update,exit)
 func initialize2()
-	
+
 	local $count = 0
 	while $cmdNumbers[0] > 0
 		_ArrayPop($cmdNumbers)
@@ -336,8 +353,8 @@ func initialize2()
 		_ArrayPop($jumpLines)
 		$jumpLines[0] -=1
 	WEnd
-	
-	
+
+
 	while $count <= $aSize
 		if StringLeft($astrings[$count],13) == "*nextCommand*" then
 			_ArrayAdd($cmdNumbers, $count)
@@ -347,7 +364,7 @@ func initialize2()
 ;~ 			   _ArrayAdd($jumpLines,$count&":"&StringTrimLeft($astrings[$count],19))
 			   _ArrayAdd($jumpLines,$cmdNumbers[0]&":"&StringTrimLeft($astrings[$count],19))
 			EndIf
-			
+
 		EndIf
 		$count +=1
 	WEnd
@@ -356,58 +373,58 @@ func initialize2()
 		MsgBox(0,"ERROR","no commands found")
 		Exit
 	EndIf
-	
+
 	loadJumpMenu()
-	
+
 EndFunc
 
 Func pasteNext2()
-	;disable hotkeys	
+	;disable hotkeys
 	HotKeySet($HK_send)
 	HotKeySet($HK_dec)
 	HotKeySet($HK_inc)
-	
+
 	local $sendString = GUICtrlRead($guiCmd)
-	
+
 	if $var1On == 1 And StringInStr($sendString,"*var1*") Then
 		$sendString = StringReplace($sendString,"*var1*",GUICtrlRead($guiVar1Input))
 	EndIf
-	
+
 	for $icount = 0 To $modeCount-1
 		for $jcount = 0 to $modes[0]-1
 			$sendString = stringReplace($sendString,"$"&$modeList[$icount][$jcount],$modeList[$icount][$jcount],0,1)
 		Next
 	Next
-	
+
 	send("{CTRLDOWN}")
 	send("{CTRLUP}")
-		
-   
+
+
    if GUICtrlRead($guiComboCmdTypes) == "RUN" Then
-		Run($sendString)		
+		Run($sendString)
    ElseIf GUICtrlRead($guiComboCmdTypes)== "CPY" Then
 		$stringSplit = StringSplit($sendString,">")
-		if $stringSplit[0] == 2 Then		
+		if $stringSplit[0] == 2 Then
 			if FileCopy($stringSplit[1],$stringSplit[2],1) ==0 Then
 			   MsgBox(0,"ZOOM Copy","File Copy Failed: "&$sendString)
 			EndIf
-			
+
 		Else
 			MsgBox(0,"invalid copy command", "args should be split with '>' symbol once and only once")
 		EndIf
-		
+
    ElseIf GUICtrlRead($guiComboCmdTypes)== "RMV" Then
 	  if FileDelete($sendString) == 0 Then
 		 MsgBox(0,"ZOOM delete","File deletion failed: "&$sendString)
 	  EndIf
-		
+
    Else
-		Send($sendString) ;grab the cmd one	
+		Send($sendString) ;grab the cmd one
    EndIf
-	
-	
+
+
 	forward2()
-	
+
 	;enable hotkeys
 	HotKeySet($HK_send,"pasteNext"&$fileVersion)
 	HotKeySet($HK_dec,"back"&$fileVersion)
@@ -423,13 +440,13 @@ Func forward2()
 		send("{CTRLUP}")
 		Return 1
 	EndIf
-	
-	updateGui()	
+
+	updateGui()
 ;~ 	send("{CTRLDOWN}")
 	send("{CTRLUP}")
 
 EndFunc
-	
+
 Func back2()
 	$cmdNum -=1
 	if $cmdNum < 1 Then
@@ -437,8 +454,8 @@ Func back2()
 		send("{CTRLUP}")
 		Return 1
 	EndIf
-	
-	updateGui()	
+
+	updateGui()
 	send("{CTRLUP}")
 
 EndFunc
@@ -446,19 +463,19 @@ EndFunc
 Func updateGui2()
 ;~ 	MsgBox(0,"cmdnum",$cmdNum)
 	$x = $cmdNumbers[$cmdNum]
-	
+
 	$pmtString = ""
 	$cmdString = ""
 	$exeString = ""
-	
+
 	if $x+2 <= $astrings[0] Then
 		$pmtString = StringTrimLeft($astrings[$x+1],4)
 		$cmdString = StringTrimLeft($astrings[$x+2],4)
 	EndIf
-	
-   GUICtrlSetData($guiComboCmdTypes, StringLeft($astrings[$x+2],3),StringLeft($astrings[$x+2],3)) 
-	  
-	
+
+   GUICtrlSetData($guiComboCmdTypes, StringLeft($astrings[$x+2],3),StringLeft($astrings[$x+2],3))
+
+
 	;$modes[0] is the number of mode types (pugs, dugs, tugs)
 ;~ 	$modeList
 	for $icount = 0 To $modeCount-1
@@ -467,11 +484,11 @@ Func updateGui2()
 			$cmdString = stringReplace($cmdString,"$"&$modeList[$icount][$jcount],"$"&$modeList[$icount][$currentMode],0,1)
 		Next
 	Next
-	
-	
+
+
 	GUICtrlSetData ( $guiTask, $pmtString )
-	GUICtrlSetData ( $guiCmd, $cmdString )		
-	GUICtrlSetData ( $guiCmdNum, $cmdNum &" of " & $cmdNumbers[0])		
+	GUICtrlSetData ( $guiCmd, $cmdString )
+	GUICtrlSetData ( $guiCmdNum, $cmdNum &" of " & $cmdNumbers[0])
 EndFunc
 
 
@@ -479,7 +496,7 @@ Func savePmt2()
 	$astrings[$x+1] = "pmt="&GUICtrlRead($guiTask)
 	$fileChanged = 1
 	GUICtrlSetState($menuitem_save, $GUI_ENABLE)
-	
+
 	$pmt_lastChecked="~notSet~"
 EndFunc
 
@@ -499,7 +516,7 @@ Func insertCmdBefore2()
 	_ArrayInsert($astrings,$x,"*nextCommand*")
 	_ArrayInsert($astrings,$x+1,"pmt=")
 	_ArrayInsert($astrings,$x+2,"STR=")
-	
+
 	$astrings[0] +=3
 	$aSize = $astrings[0]
 ;~ 	MsgBox(0,"astrings Size",$astrings[0])
@@ -516,7 +533,7 @@ Func insertCmdAfter2()
 	_ArrayInsert($astrings,$x,"*nextCommand*")
 	_ArrayInsert($astrings,$x+1,"pmt=")
 	_ArrayInsert($astrings,$x+2,"STR=")
-	
+
 	$astrings[0] +=3
 	$aSize = $astrings[0]
 ;~ 	MsgBox(0,"astrings Size",$astrings[0])
@@ -524,7 +541,7 @@ Func insertCmdAfter2()
 	initialize2()
 ;~ 	MsgBox(0,"cmdnum",$cmdNum)
 	updateGui2()
-	
+
 EndFunc
 
 Func deleteCmd2()
@@ -535,7 +552,7 @@ Func deleteCmd2()
 	_ArrayDelete($astrings,$x)
 	$astrings[0] -=3
 	$aSize = $astrings[0]
-	
+
 	initialize2()
 	if $cmdNum > $cmdNumbers[0] Then
 		$cmdNum = $cmdNumbers[0]
@@ -547,10 +564,10 @@ EndFunc
 
 Func exitButton2()
 	if $fileChanged == 1 and MsgBox(4+32,"Save?","Do you want to save changes?") == 6 Then
-			
+
 		If Not _FileWriteFromArray($fileName,$astrings,1) Then
 			MsgBox(4096,"Error", " Error writing array to file     error:" & @error)
-		else 
+		else
 			send("{CTRLUP}")
 			Exit
 		EndIf
@@ -566,7 +583,7 @@ EndFunc
 #Region PreZoom (zoomPre, createNewZoom, loadZoom)
 Func zoomPre()
 	;### GUI ###
-	
+
 	Local $width = 200
 	Local $height = 100
 ;~ 	opt("GUIOnEventMode",1)
@@ -577,13 +594,13 @@ Func zoomPre()
 	$guiLoadTask = GUICtrlCreateButton("Load Task", $width*2/10, $height*5/9+3,$width*6/10,$height*3/9)
 ;~ 	GUICtrlCreatePic("C:\zoom\logo.jpg",0,0,$width*5/10-5,$height)
 ;~ 	GUISetBkColor(0x000000)
-	
+
 ;~ 	GUICtrlSetBkColor($guiNewTask,0x7BE239)
 ;~ 	GUICtrlSetBkColor($guiLoadTask,0x7BE239)
 	GUICtrlSetOnEvent($guiLoadTask,"loadZoom")
 	GUICtrlSetOnEvent($guiNewTask,"createNewZoom")
 	GUISetOnEvent($GUI_EVENT_CLOSE, "exitButton",$GUI_zoomPre)
-	
+
 
 
 	GUISetState(@SW_SHOW)
@@ -597,27 +614,27 @@ func createNewZoom()
 	if $fileName = "" Then
 		return 1
 	EndIf
-	
+
 	while FileExists($fileName)
 		$fileName = InputBox("New Zoom File", "File Exists: try again",$zoomPath&"\newzoom1.zoo")
-	
+
 
 	WEnd
 	$file = FileOpen($fileName,1)
-	
+
 	;Write the initial stuff
 	FileWrite($file,$newFileText)
-	
-	
-	FileClose($file)	
+
+
+	FileClose($file)
 	GUISetOnEvent($GUI_EVENT_CLOSE, "",$GUI_zoomPre)
 	GUIDelete($GUI_zoomPre)
 	zoomMain()
-	
+
 EndFunc
 
 Func loadZoom()
-	
+
 	$fileName = FileOpenDialog("ZOOM : Choose Input File",$zoomPath & "\","Text files (*.zoo;*.txt)",3)
 
 	If @error Then
@@ -626,7 +643,7 @@ Func loadZoom()
 	GUISetOnEvent($GUI_EVENT_CLOSE, "",$GUI_zoomPre)
 	GUIDelete($GUI_zoomPre)
 	zoomMain()
-	
+
 EndFunc
 
 #EndRegion
@@ -641,20 +658,20 @@ Func zoomMain()
 			FileWrite($fileName,$newFileText)
 			If Not _FileReadToArray($fileName,$astrings) Then
 				if @error Then
-					MsgBox(4096,"Error", " Error creating new file and reading log to Array     error:" & @error)	
+					MsgBox(4096,"Error", " Error creating new file and reading log to Array     error:" & @error)
 					Exit
 				EndIf
 			EndIf
-			
+
 		Else
-		MsgBox(4096,"Error", " Error reading log to Array     error:" & @error)	
+		MsgBox(4096,"Error", " Error reading log to Array     error:" & @error)
 		Exit
 		EndIf
 	EndIf
 	;_ArrayDisplay($astrings, "$avArray set manually 1D")
 	$aSize = $astrings[0]
 	if $aSize < 2 Then
-		
+
 		MsgBox(0,"Error","unknown file format")
 		Exit
 	EndIf
@@ -662,9 +679,9 @@ Func zoomMain()
 	;#Check file verison#
 	;####################
 	If StringLeft($astrings[1],StringLen("zoomVersion=")) == "zoomVersion=" Then
-		$fileVersion = StringTrimLeft($astrings[1],StringLen("zoomVersion="))		 
+		$fileVersion = StringTrimLeft($astrings[1],StringLen("zoomVersion="))
 		loadVars()
-		loadModes()			
+		loadModes()
 	Else
 		MsgBox(0,"ERROR","File Fomat not recognized")
 		Exit
@@ -706,54 +723,54 @@ Func zoomMain()
    global $guiComboCmdTypes = GUICtrlCreateCombo("STR",9,140,48)
    local $tempCounter = 0
    while $tempCounter < UBound($cmdTypes)
-	  GUICtrlSetData(-1, $cmdTypes[$tempCounter]) 
+	  GUICtrlSetData(-1, $cmdTypes[$tempCounter])
 	  $tempCounter+=1
    WEnd
-   
-   
-	
+
+
+
 	Global $guiCmd = GUICtrlCreateEdit("this is my command", 60, 140,380,60,$ES_MULTILINE)
 	;GUICtrlSetDefColor($g_color_inQueue)
 ;~ 	GUICtrlSetOnEvent($guiTask,"taskChange")
 ;~ 	GUICtrlSetOnEvent($guiCmd,"cmdChange")
-	
+
 	;~ GUICtrlCreateButton("OK", 70, 50, 60)
 
 	;~ MsgBox(0,"file version is",$fileVersion)
 	updateGui()
 
    GUICtrlSetOnEvent($guiComboCmdTypes,"cmdChange")
-	
-	
+
+
 	Global $guiWritePmt = GUICtrlCreateButton("save",450,70,50,40)
 	Global $guiWriteCmd = GUICtrlCreateButton("save",450,140,50,60)
 	Global $guiWriteInsB = GUICtrlCreateButton("Insert New Command Before",170,110,145,30)
 	Global $guiDelCmd = GUICtrlCreateButton("Delete",315,110,40,30)
 	Global $guiWriteInsA = GUICtrlCreateButton("Insert New Command After",355,110,145,30)
 
-	Global $guiVar1preLabel = GUICtrlCreateLabel(" *var1* :",$GUI_width/6,20)	
+	Global $guiVar1preLabel = GUICtrlCreateLabel(" *var1* :",$GUI_width/6,20)
 	Global $guiVar1Input = GUICtrlCreateInput("",$GUI_width/6 +50,15,100)
 	Global $guiVar1Label = GUICtrlCreateLabel("12345678901234567",$GUI_width/6+155,20)
 	Global $guiVar1Toggle = GUICtrlCreateButton("Toggle Var1",$GUI_width-135,10)
 	GUICtrlSetData($guiVar1Label,$var1Label)
-	
+
 ;~ 	GUICtrlSetLimit($guiVar1Label,10)
-	
+
 	if $var1On == 0 Then
 		GUICtrlSetState($guiVar1Input,$GUI_HIDE)
 		GUICtrlSetState($guiVar1Label,$GUI_HIDE)
 		GUICtrlSetState($guiVar1preLabel,$GUI_HIDE)
-		
+
 	Else
 ;~ 		GUICtrlSetState($guiVar1Toggle,$GUI_HIDE)
 	EndIf
-   
+
 	GUICtrlSetOnEvent ( $guiWritePmt, "savepmt"&$fileVersion)
 	GUICtrlSetOnEvent ( $guiWriteCmd, "savecmd"&$fileVersion)
 	GUICtrlSetOnEvent ( $guiWriteInsB, "insertCmdBefore"&$fileVersion)
 	GUICtrlSetOnEvent ( $guiDelCmd, "deleteCmd"&$fileVersion)
 	GUICtrlSetOnEvent ( $guiWriteInsA, "insertCmdAfter"&$fileVersion)
-	
+
 	GUICtrlSetOnEvent($guiVar1Toggle,"var1Toggle")
 
 
@@ -764,121 +781,152 @@ Func zoomMain()
 	Global $menuitem_save = GUICtrlCreateMenuItem("Save File", $menufile)
 	GUICtrlSetState(-1, $GUI_DISABLE);only enabled when it saves somethin
 	Global $menuitem_exit = GUICtrlCreateMenuItem("Exit", $menufile)
-	
-	
-	
+
+
+
 	Global $menuoptions = GUICtrlCreateMenu("Options")
 	Global $menucommand = GUICtrlCreateMenu("Command")
 	Global $menumode = GUICtrlCreateMenu("Mode")
-	Global $menuvars = GUICtrlCreateMenu("Vars")	
-	
+	Global $menuvars = GUICtrlCreateMenu("Vars")
+
 	Global $menuhelp = GUICtrlCreateMenu("Help")
 	Global $menuitem_alwaysSave = GUICtrlCreateMenuItem("autoSave Field Changes", $menuoptions)
 	Global $menuitem_nextCommand = GUICtrlCreateMenuItem("next command (ctrl+e)", $menucommand)
 	Global $menuitem_prevCommand = GUICtrlCreateMenuItem("prev command (ctrl+q)", $menucommand)
-	Global $menuitem_runCommand = GUICtrlCreateMenuItem("run command (ctrl+w)", $menucommand)	
-	
-	
+	Global $menuitem_runCommand = GUICtrlCreateMenuItem("run command (ctrl+w)", $menucommand)
+
+
 	loadJumpMenu()
-	
+
 	;modes
 	$tempNum = 0
 ;~ 	MsgBox(0,"modes",$modes[0])
-	Global $modesMenu[6]
-	for $count = 1 To $modes[0]
-		$modesMenu[$count]=GUICtrlCreateMenuItem( $modes[$count], $menumode)	
-		GUICtrlSetOnEvent ( -1, "changeMode"&$count)
-	Next
-		
-	if ($modeSwitch==1) Then
-		GUICtrlSetState ( $modesMenu[1], $GUI_CHECKED )
-	EndIf
-	
-   GUICtrlCreateMenuItem( "manageModes", $menumode)	
-   GUICtrlSetOnEvent ( -1, "manageModes")
-   
-	
+
+   menuModes_load()
+
+
 	Global $menuitem_genHelp = GUICtrlCreateMenuItem("Help", $menuhelp)
 ;~ 	Global $menuitem_zoomPath = GUICtrlCreateMenuItem("Change Zoom Folder", $menuoptions)
 ;~ 	GUICtrlSetState(-1, $GUI_CHECKED)
 	GUICtrlSetOnEvent ( $menuitem_alwaysSave, "alwaysSaveOption")
-	
+
 	GUICtrlSetOnEvent ( $menuitem_nextCommand, "forward2")
 	GUICtrlSetOnEvent ( $menuitem_prevCommand, "back2")
 	GUICtrlSetOnEvent ( $menuitem_runCommand, "pasteNext2")
-	
-	
+
+
 	GUICtrlSetOnEvent ( $menuitem_genHelp, "displayHelp")
 ;~ 	GUICtrlSetOnEvent ( $menuitem_zoomPath, "changeZoomPath")
 	GUICtrlSetOnEvent ( $menuitem_save, "saveZoom")
 	GUICtrlSetOnEvent ( $menuitem_exit, "exitButton")
-	
-	
-	
+
+
+
 ;~ 	$recentfilesmenu = GUICtrlCreateMenu("Recent Files", $menufile, 1)
 
 ;##### End of Menu ####
+
+   if $modeCount>0 Then
+
+	  MsgBox(0,"please choose mode","Choose Mode")
+	  EndIf
 	GUISetState(@SW_SHOW)
 
 ;~ 	while 1
 ;~ 		sleep(100)
 ;~ 	WEnd
 EndFunc
+
+func menuModes_load()
+   Global $modesMenu[10]
+
+	for $count = 1 To $modes[0]
+		$modesMenu[$count]=GUICtrlCreateMenuItem( $modes[$count], $menumode)
+		GUICtrlSetOnEvent ( -1, "changeMode"&$count)
+	Next
+
+	if ($modeSwitch==1) Then
+		GUICtrlSetState ( $modesMenu[1], $GUI_CHECKED )
+	EndIf
+   global $manageModeMenu = GUICtrlCreateMenuItem( "manageModes", $menumode)
+	  GUICtrlSetOnEvent ( -1, "manageModes")
+EndFunc
+
+func menuModes_remove()
+
+
+   for $count = 1 To $modes[0]
+		GUICtrlDelete($modesMenu[$count])
+	 Next
+
+	 GUICtrlDelete($manageModeMenu)
+
+EndFunc
+
+
+
 Func loadVars()
    local $lineCounter = 0
    While ($lineCounter < $aSize)
-	  if StringLeft($astrings[$lineCounter],5) == "var1=" then 
+	  if StringLeft($astrings[$lineCounter],5) == "var1=" then
 		 $var1On = 1
 		 $var1Label = StringTrimLeft($astrings[$lineCounter],5)
-	  EndIf	
-			
+	  EndIf
+
 	  if StringInStr($astrings[$lineCounter],"*nextCommand*") Then
-		 ExitLoop 
-	  EndIf   
+		 ExitLoop
+	  EndIf
 	  $lineCounter+=1
    WEnd
 EndFunc
 func loadModes()
    local $lineCounter = 0
    While ($lineCounter < $aSize)
-		 
-	  if StringLeft($astrings[$lineCounter],6) == "modes=" then 
+
+	  if StringLeft($astrings[$lineCounter],6) == "modes=" then
 		 $modeSwitch = 1
 		 $modes = StringSplit(StringTrimLeft($astrings[$lineCounter],6),"~")
-	  elseif StringLeft($astrings[$lineCounter],4) == "mode" then 
+	  elseif StringLeft($astrings[$lineCounter],4) == "mode" then
 		 $temp = StringSplit(StringTrimLeft($astrings[$lineCounter],6),"~")
+
 		 for $count = 1 To $temp[0]
 			$modeList[$modeCount][$count-1] = $temp[$count]
 		 Next
 		 $modeCount+=1
 	  EndIf
-		 
+
 	  if StringInStr($astrings[$lineCounter],"*nextCommand*") Then
-		  ExitLoop 
+		  ExitLoop
 	  EndIf
-	  
+
 	  $lineCounter+=1
 	 WEnd
 
 EndFunc
 
+
 Func manageModes()
    Local $rowNum = 10
    Local $colNum = 4
-   Local $colSep = 120, $rowSep = 30
-   Global $guiModes = GUICreate("Zoom - Manage Modes",100+$colSep*$colNum,60+$rowSep*$rowNum)
+   Global $mode_colSep = 120, $mode_rowSep = 30
+   Global $guiModes = GUICreate("Zoom - Manage Modes",100+$mode_colSep*$colNum,60+$mode_rowSep*$rowNum)
    Global $mode_columns[5][20]
+   global $mode_bufferY = 75
+   global $mode_bufferX = 50
    Local $col = 0
    Local $row=0
-   Global $mode_maxRow = 10
-   Global $mode_maxCol = 4
+   Global $mode_maxRow = 3
+   Global $mode_maxCol = 2
    local $ctr = 0
    local $modeStart = -1
    local $modeEnd = -1
-   
+   global $guiModes_plusRow
+   global $guiModes_plusCol
+   local $tempCtr = 0
+
 ;~    MsgBox(0,"gar",stringtrimleft($astrings[2],6))
 
-   
+
    while $astrings[$ctr]<>"*nextCommand*"
 	  if StringLeft($astrings[$ctr],6)=="modes=" Then
 		 $modeStart = $ctr
@@ -887,117 +935,307 @@ Func manageModes()
 	  $ctr+=1
    WEnd
    $modeEnd = $ctr
-   
+
+
+   ;$mode_colDeletes
+
+
+
+
+
    if $modeStart == -1 Then
-	  
-	  While $row <$mode_maxRow ;this should really be until *nextCommand* is hit	  
+
+	  while $tempCtr < $mode_maxCol
+		 ReDim $mode_colDeletes[$tempCtr+1]
+		 $mode_colDeletes[$tempCtr] = GUICtrlCreateButton("X",$mode_bufferX+30+($mode_colSep*$tempCtr),$mode_bufferY-30,40)
+		 GUICtrlSetOnEvent(-1,"mode_deleteCol")
+		 $tempCtr+=1
+	  WEnd
+	  $guiModes_plusCol = GUICtrlCreateButton("+",$mode_bufferX+30+($mode_colSep*$tempCtr),$mode_bufferY-30,40)
+	  GUICtrlSetOnEvent(-1,"mode_addCol")
+
+	  While $row <$mode_maxRow ;this should really be until *nextCommand* is hit
 		 $col = 0
+		 $mode_rowsDeletes[$row] = GUICtrlCreateButton("X",$mode_bufferX-20,$mode_bufferY+($mode_rowSep*$row))
+		 GUISetOnEvent(-1,"mode_deleteRow")
 		 while $col <$mode_maxCol
-			
+
 			if $row==0 Then
-			   $mode_columns[$col][$row] = GUICtrlCreateInput("Name",70+($colSep*$col),35+($rowSep*$row),60)		 
+			   $mode_columns[$col][$row] = GUICtrlCreateInput("Name",$mode_bufferX+20+($mode_colSep*$col),$mode_bufferY+($mode_rowSep*$row),60)
 			Else
-			   $mode_columns[$col][$row] = GUICtrlCreateInput("string",50+($colSep*$col),35+($rowSep*$row),100)
+			   $mode_columns[$col][$row] = GUICtrlCreateInput("string",$mode_bufferX+($mode_colSep*$col),$mode_bufferY+($mode_rowSep*$row),100)
 			EndIf
-			$col+=1			
+			$col+=1
 		 WEnd
 		 $row+=1
 	  WEnd
+	  $guiModes_plusRow = GUICtrlCreateButton("+",$mode_bufferX-20,$mode_bufferY+($mode_rowSep*$row))
+	  GUICtrlSetOnEvent(-1,"mode_addRow")
    Else
 	  $tempHead = StringSplit(stringtrimleft($astrings[$modeStart],6),"~")
 	  $mode_maxCol = $tempHead[0]
-;~ 	  MsgBox(0,"$modeEnd-$modeStart",$modeEnd-$modeStart)
 	  $mode_maxRow = $modeEnd-$modeStart
-   
-   ;~    Not(StringLeft($astrings[$ctr],6)=="modes=")
-	  
-	  
-   ;~    MsgBox(0,"echo",$astrings[2])
-	  While $row <$mode_maxRow ;this should really be until *nextCommand* is hit	  
+
+	  while $tempCtr < $mode_maxCol
+		 ReDim $mode_colDeletes[$tempCtr+1]
+		 $mode_colDeletes[$tempCtr] = GUICtrlCreateButton("X",$mode_bufferX+30+($mode_colSep*$tempCtr),$mode_bufferY-30,40)
+		 GUICtrlSetOnEvent(-1,"mode_deleteCol")
+		 $tempCtr+=1
+	  WEnd
+	  $guiModes_plusCol = GUICtrlCreateButton("+",$mode_bufferX+30+($mode_colSep*$tempCtr),$mode_bufferY-30,40)
+	  GUICtrlSetOnEvent(-1,"mode_addCol")
+
+
+	  While $row <$mode_maxRow ;this should really be until *nextCommand* is hit
 		 $col = 0
+		 ReDim $mode_rowsDeletes[$row+1]
+		 $mode_rowsDeletes[$row] = GUICtrlCreateButton("X",$mode_bufferX-20,$mode_bufferY+($mode_rowSep*$row))
+		 GUICtrlSetOnEvent(-1,"mode_deleteRow")
 		 while $col <$mode_maxCol
 			$tempA = StringSplit(stringtrimleft($astrings[$row+$modeStart],6),"~")
 			if $row==0 Then
-			   $mode_columns[$col][$row] = GUICtrlCreateInput($tempA[$col+1],70+($colSep*$col),35+($rowSep*$row),60)		 
+			   $mode_columns[$col][$row] = GUICtrlCreateInput($tempA[$col+1],$mode_bufferX+20+($mode_colSep*$col),$mode_bufferY+($mode_rowSep*$row),60)
 			Else
-			   $mode_columns[$col][$row] = GUICtrlCreateInput($tempA[$col+1],50+($colSep*$col),35+($rowSep*$row),100)
+			   $mode_columns[$col][$row] = GUICtrlCreateInput($tempA[$col+1],$mode_bufferX+($mode_colSep*$col),$mode_bufferY+($mode_rowSep*$row),100)
 			EndIf
-			$col+=1			
+			$col+=1
 		 WEnd
 		 $row+=1
 	  WEnd
-	  
+	  $guiModes_plusRow = GUICtrlCreateButton("+",$mode_bufferX-20,$mode_bufferY+($mode_rowSep*$row))
+	  GUICtrlSetOnEvent(-1,"mode_addRow")
    EndIf
-   
-   
+
+
    GUISetState(@SW_SHOW)
    $test = GUISetOnEvent($GUI_EVENT_CLOSE, "exitModes",$guiModes)
-   
+
    $guiModes_info = GUICtrlCreateLabel("Mode Special Prefix Character: $",50,10)
    $guuiModes_save = GUICtrlCreateButton("Save Modes",245,330)
+
+
+   if UBound($mode_rowsDeletes) >0 Then
+	  GUICtrlSetState($mode_rowsDeletes[0],$GUI_HIDE)
+   EndIf
    GUICtrlSetOnEvent(-1,"modes_saveArray")
 EndFunc
+func mode_addRow()
 
+   $row =$mode_maxRow
+   $mode_maxRow+=1
+   $col = 0
+   ReDim $mode_rowsDeletes[$row+1]
+   $mode_rowsDeletes[$row] = GUICtrlCreateButton("X",30,$mode_bufferY+($mode_rowSep*$row))
+   GUICtrlSetOnEvent(-1,"mode_deleteRow")
+   redim $mode_columns[$mode_maxCol][$mode_maxRow]
+   while $col <$mode_maxCol
+
+	  $mode_columns[$col][$row] = GUICtrlCreateInput("Enter Mode"&$col+1,$mode_bufferX+($mode_colSep*$col),$mode_bufferY+($mode_rowSep*$row),100)
+	  $col+=1
+   WEnd
+   $row+=1
+
+   GUICtrlSetPos($guiModes_plusRow,$mode_bufferX-20,$mode_bufferY+($mode_rowSep*$row))
+
+EndFunc
+
+func mode_addCol()
+
+   $col =$mode_maxCol
+   $mode_maxCol+=1
+   $row = 0
+   ; something is wrong with this part
+   ReDim $mode_colDeletes[$col+1]
+   $mode_colDeletes[$col] = GUICtrlCreateButton("X",$mode_bufferX+30+($mode_colSep*$col),$mode_bufferY-30,40)
+   GUICtrlSetOnEvent(-1,"mode_deleteCol")
+   redim $mode_columns[$mode_maxCol][$mode_maxRow]
+   while $row <$mode_maxRow
+
+	  if $row==0 Then
+		 $mode_columns[$col][$row] = GUICtrlCreateInput("Enter Mode"&$row+1,$mode_bufferX+20+($mode_colSep*$col),$mode_bufferY+($mode_rowSep*$row),60,25)
+	  Else
+		 $mode_columns[$col][$row] = GUICtrlCreateInput("Enter Mode"&$row+1,$mode_bufferX+($mode_colSep*$col),$mode_bufferY+($mode_rowSep*$row),100,25)
+	  EndIf
+
+	  $row+=1
+   WEnd
+   $col+=1
+
+   GUICtrlSetPos($guiModes_plusCol,$mode_bufferX+30+($mode_colSep*$mode_maxCol),$mode_bufferY-30,40)
+
+EndFunc
+
+Func mode_deleteCol()
+   local $deleteCol
+   local $ctr=0
+;~    MsgBox(0,"deletingcol","yar")
+   while @GUI_CTRLID <>$mode_colDeletes[$ctr]
+	  $ctr+=1
+   WEnd
+   $deleteCol = $ctr
+
+   $row = 0
+;~    MsgBox(0,"deleting row",$deleteRow)
+   while $row <$mode_maxRow
+	  GUICtrlDelete( $mode_columns[$deleteCol][$row])
+	  $row+=1
+   WEnd
+
+   GUICtrlDelete($mode_colDeletes[$deleteCol])
+   _arrayDelete($mode_colDeletes,$deleteCol)
+   $ctr=$deleteCol
+
+   ;there might be a better way to do this..like just delete the last one
+   while $ctr<UBound($mode_colDeletes)
+	  GUICtrlSetPos($mode_colDeletes[$ctr],$mode_bufferX+30+($mode_colSep*$ctr),$mode_bufferY-30,40)
+	  $ctr+=1
+   WEnd
+   GUICtrlSetPos($guiModes_plusCol,$mode_bufferX+30+($mode_colSep*$ctr),$mode_bufferY-30,40)
+
+
+
+   $mode_maxCol-=1
+   ;shift others up in the array
+   $row = 0
+   While $row <$mode_maxRow ;this should really be until *nextCommand* is hit
+	  $col = $deleteCol
+
+	  while $col <$mode_maxCol
+;~ 		MsgBox(0,"moving row",$row)
+		 $mode_columns[$col][$row]=$mode_columns[$col+1][$row]
+		 if $row==0 Then
+			GUICtrlSetPos($mode_columns[$col][$row],$mode_bufferX+20+($mode_colSep*$col),$mode_bufferY+($mode_rowSep*$row),60)
+		 Else
+			GUICtrlSetPos($mode_columns[$col][$row],$mode_bufferX+($mode_colSep*$col),$mode_bufferY+($mode_rowSep*$row),100)
+		 EndIf
+		 $col+=1
+	  WEnd
+	  $row+=1
+   WEnd
+
+   ReDim $mode_columns[$mode_maxCol][$mode_maxRow]
+
+EndFunc
+
+func mode_deleteRow()
+   ;@GUI_CTRLID
+   ;$mode_rowsDeletes[20]
+   local $ctr=0
+   local $deleteRow
+;~    MsgBox(0,"in mode_deleteRow","yar")
+   ;find the correct row
+   while @GUI_CTRLID <>$mode_rowsDeletes[$ctr]
+	  $ctr+=1
+   WEnd
+
+   $deleteRow = $ctr
+
+   ;delete the gui row
+
+   $col = 0
+;~    MsgBox(0,"deleting row",$deleteRow)
+   while $col <$mode_maxCol
+	  GUICtrlDelete( $mode_columns[$col][$deleteRow])
+	  $col+=1
+   WEnd
+
+
+   GUICtrlDelete($mode_rowsDeletes[$deleteRow])
+   _arrayDelete($mode_rowsDeletes,$deleteRow)
+   $ctr=$deleteRow
+
+   while $ctr<UBound($mode_rowsDeletes)
+	  GUICtrlSetPos($mode_rowsDeletes[$ctr],$mode_bufferX-20,$mode_bufferY+($mode_rowSep*$ctr))
+	  $ctr+=1
+   WEnd
+   GUICtrlSetPos($guiModes_plusRow,$mode_bufferX-20,$mode_bufferY+($mode_rowSep*$ctr))
+
+;~    _arrayDisplay($mode_columns)
+   $mode_maxRow-=1
+   ;shift others up in the array
+   $row = $deleteRow
+   While $row <$mode_maxRow ;this should really be until *nextCommand* is hit
+	  $col = 0
+
+	  while $col <$mode_maxCol
+;~ 		MsgBox(0,"moving row",$row)
+		 $mode_columns[$col][$row]=$mode_columns[$col][$row+1]
+		 GUICtrlSetPos($mode_columns[$col][$row],$mode_bufferX+($mode_colSep*$col),$mode_bufferY+($mode_rowSep*$row),100)
+		 $col+=1
+	  WEnd
+	  $row+=1
+   WEnd
+
+   ReDim $mode_columns[$mode_maxCol][$mode_maxRow]
+;~    _arrayDisplay($mode_columns)
+   ;
+
+EndFunc
 Func modes_saveArray()
-   
+
    Local $col = 0
    Local $row=0
    local $ctr = 0
    local $saveValue = ""
    ;$mode_maxRow
    ;$mode_maxCol
-   
+
+   menuModes_remove()
+
    ;delete all mode data
    while $astrings[$ctr]<>"*nextCommand*"
 	  if StringLeft($astrings[$ctr],4)=="mode" Then
 		 _ArrayDelete($astrings,$ctr)
 		 $astrings[0] -=1
 	  Else
-		$ctr+=1 
+		$ctr+=1
 	  EndIf
-	  
+
    WEnd
    $aSize = $astrings[0]
-   
+
    ;gather new mode data and save it
-   
-   While $row <$mode_maxRow ;this should really be until *nextCommand* is hit	  
+
+   While $row <$mode_maxRow ;this should really be until *nextCommand* is hit
 		 $col = 0
 		 if $row==0 Then
 			   $saveValue="modes="
 		 Else
-			   $saveValue="mode"&$row&"="			   
+			   $saveValue="mode"&$row&"="
 		 EndIf
 		 while $col <$mode_maxCol
-						
-;~ 			$mode_columns[$col][$row] = GUICtrlCreateInput($tempA[$col+1],50+($colSep*$col),35+($rowSep*$row),100)
+
+;~ 			$mode_columns[$col][$row] = GUICtrlCreateInput($tempA[$col+1],50+($mode_colSep*$col),$mode_bufferY+($mode_rowSep*$row),100)
 			$saveValue=$saveValue&GUICtrlRead($mode_columns[$col][$row])
-			
+
 			if $col+1<$mode_maxCol Then
 			   $saveValue=$saveValue&"~"
 			EndIf
-			
-			
-			$col+=1			
-		 WEnd		 
+
+
+			$col+=1
+		 WEnd
 		 _ArrayInsert($astrings,$row+2,$saveValue)
 		 $astrings[0] +=1
 		 $aSize = $astrings[0]
-		 
+
 		 $row+=1
 	  WEnd
    $fileChanged = 1
    GUICtrlSetState($menuitem_save, $GUI_ENABLE)
 ;~    _ArrayDisplay($astrings)
 
-   
+
    GUIDelete($guiModes)
+   loadModes()
+   menuModes_load()
    initialize2()
-   
+
+
 
 EndFunc
 
-   
+
 
 Func exitModes()
    GUIDelete($guiModes)
@@ -1010,21 +1248,21 @@ func loadJumpMenu()
    $menujump = GUICtrlCreateMenu("Jump to...")
    $ctr= 0
    while $ctr<$jumpLines[0]
-	  $menujump_link[$ctr] = GUICtrlCreateMenuItem($jumpLines[$ctr+1], $menujump)	
+	  $menujump_link[$ctr] = GUICtrlCreateMenuItem($jumpLines[$ctr+1], $menujump)
 	  GUICtrlSetOnEvent ( -1, "jump")
 	  $ctr+=1
    WEnd
-	
-   GUICtrlCreateMenuItem("create jump...", $menujump)	
-   GUICtrlSetOnEvent ( -1, "newJump")
-   
+
+   $menuItem = GUICtrlCreateMenuItem("create jump...", $menujump)
+   GUICtrlSetOnEvent ( $menuItem, "newJump")
+
 EndFunc
 
 func newJump()
-   local $name 
-   
+   local $name
+
    $name = InputBox("Zoom - Add Jump","Add the jump name, leave blank to delete")
-  
+
 
    If $name == "" Then
 	  $astrings[$cmdNumbers[$cmdNum]] = "*nextCommand*"
@@ -1034,70 +1272,70 @@ func newJump()
    $fileChanged = 1
    GUICtrlSetState($menuitem_save, $GUI_ENABLE)
    initialize2()
-   
+
 EndFunc
 
 
 func jump()
    Local $ctr2 = 0
    while $ctr2 < 100
-	  
+
 	  if $menujump_link[$ctr2] == @GUI_CTRLID Then
 		 $cmdNum =StringLeft($jumpLines[$ctr2+1],StringInStr($jumpLines[$ctr2+1],":")-1)
 		 updateGui()
 		 ExitLoop
-	  EndIf   
+	  EndIf
 	  $ctr2+=1
    WEnd
-	  
+
  EndFunc
-	
+
 Func changeMode1()
-	changeMode(1)	
+	changeMode(1)
 EndFunc
 Func changeMode2()
-	changeMode(2)	
+	changeMode(2)
 EndFunc
 Func changeMode3()
-	changeMode(3)	
+	changeMode(3)
 EndFunc
 Func changeMode4()
-	changeMode(4)	
+	changeMode(4)
 EndFunc
 Func changeMode5()
-	changeMode(5)	
+	changeMode(5)
 EndFunc
 
 Func changeMode($modeNum)
 	$currentMode = $modeNum-1
-	for $counter = 1 to $modes[0]	
-		GUICtrlSetState ( $modesMenu[$counter], $GUI_UNCHECKED )	
+	for $counter = 1 to $modes[0]
+		GUICtrlSetState ( $modesMenu[$counter], $GUI_UNCHECKED )
 	Next
-	
-	GUICtrlSetState ( $modesMenu[$modeNum], $GUI_CHECKED )	
-	
+
+	GUICtrlSetState ( $modesMenu[$modeNum], $GUI_CHECKED )
+
 EndFunc
 
 Func comboCmdChange()
    local $currentCmd = GUICtrlRead($guiComboCmdTypes)
    local $prevCmd = StringLeft($astrings[$cmdNumbers[$cmdNum]+2],3)
-   
+
    if $phase2 ==1 Then
 ;~ 		MsgBox(0,"grr",GUICtrlRead($guiTask))
 			if StringCompare($currentCmd,$prevCmd)==0 Then
-				
+
 				If $OPTION_alwaysSave == True Then
 					saveCmd2()
 				Else
 					GUICtrlSetBkColor($guiWriteCmd,0xF2F2ED)
-				EndIf				
+				EndIf
 			Else
-				
+
 				If $OPTION_alwaysSave == True Then
 					saveCmd2()
 				Else
 					GUICtrlSetBkColor($guiWriteCmd,0xff0000)
-				EndIf	
+				EndIf
 			EndIf
 	EndIf
 EndFunc
@@ -1134,49 +1372,4 @@ cmd=msp0tapis
 ;custom zoom folder location - defined in registry
 ;option to change zoom folder location
 
-#ce
-
-#cs
-;3.3.0
-added option for cmd line argument
-
-;3.1.0
-when cmd/task has not been saved, "save" is red
-toggle var1 button added
-
-;3.0.0
-added a sweet intro gui
-having "run:" in the cmd line will now run that program
-
-;2.1.0
-added custom input var1, this is useful when using strings that vary case by case
-
-
-;2.0.2
-modified exit code to prompt to save if file has been changed.
-
-;2.0.1
-added a ctrl down before the up only after text is pasted, this will stop ctrl from being stuck down,
-  but the user will have too lift the ctrl button before doing another command
-
-;2.0.0
-;added input file version 2 support
-added features for 2.0 ZoomTasks include
-- buttons with functions : insert cmd before/after, delete cmd, save task/cmd
-- users can use blank files to start new zoom tasks
-- changes are saved upon Exit
-
-
-;1.2.2
-;started adding support for version 2 file formats
-
-;1.2.1
-;changed revision formating
-;added ctrlup on Exit
-;changed cmd field to editable, now whatever is in the cmd edit box is sent, so the user can change it
-;inc command at end will not do a gui refresh
-
-;1.2
-; fixed hotkeys so ctrl doesnt need to be presses again every time
-; fixed edit boxes to be multiline and readonly
 #ce
