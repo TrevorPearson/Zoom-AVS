@@ -20,5 +20,6 @@ Script Variable!
 This variable is put into the script during runtime. It is not saved with the script. Put that utility account password in there and Zoom will type it the 10 different times you want to add it. Or you can put other information in there that will be different every time you run the script.
 
 
-I have created a youtube playlist showing how to use Zoom
-[a link](https://www.youtube.com/watch?v=IxDJ1Ys8dHk&list=PLJ99gvJC3imDHEegQFnUt2AAq4yS6oo-C)
+I have created a youtube playlist showing how to use Zoom.
+
+[a Youtube playlist](https://www.youtube.com/watch?v=IxDJ1Ys8dHk&list=PLJ99gvJC3imDHEegQFnUt2AAq4yS6oo-C)
