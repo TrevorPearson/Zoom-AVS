@@ -21,4 +21,4 @@ This variable is put into the script during runtime. It is not saved with the sc
 
 
 I have created a youtube playlist showing how to use Zoom.
-[Youtube playlist](https://www.youtube.com/watch?v=IxDJ1Ys8dHk&list=PLJ99gvJC3imDHEegQFnUt2AAq4yS6oo-C)
+[Youtube playlist](https://www.youtube.com/playlist?list=PLJ99gvJC3imDHEegQFnUt2AAq4yS6oo-C)
