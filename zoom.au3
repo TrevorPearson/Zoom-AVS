@@ -1,3 +1,4 @@
+#include <Misc.au3>
 #include <GUIConstantsEx.au3>
 #include <file.au3>
 #include <Array.au3>
@@ -5,11 +6,12 @@
 #include <EditConstants.au3>
 #Include <GuiMenu.au3>
 
+dim $LOOPING = true;
 
 ;#Include <Misc.au3>;for _IsPressed
 
 #Region version and program info
-Global Const $g_info_version = "0.4.9"
+Global Const $g_info_version = "0.5.10"
 Global Const $g_info_author = "Trevor Pearson"
 Global Const $g_info_parameters = "Optional: first arg can point to a zoom instruction (.zoo or .txt)"
 Global Const $g_info_instructions = "This program reads a txt file and will type strings for the user.  Basically, it semi-automate complex tasks.  Prompts are also inputed from the file to explain what to do next."
@@ -22,26 +24,35 @@ EndIf
 #EndRegion
 
 dim $HK_send = "^w"
+dim $HK_send2 = "`"
 dim $HK_inc = "^e"
 dim $HK_dec = "^q"
 
-
+Global $g_fLineCtr = 1;
 Global $zoomPath
+
+;$zoomPath = @MyDocumentsDir & "\zoom"
 
 $zoomPath = RegRead("HKEY_CURRENT_USER\Software\Zoom","zoomPath")
 if $zoomPath =="" Then
-	RegWrite("HKEY_CURRENT_USER\Software\Zoom","zoomPath","REG_SZ",$zoomPath)
-	$zoomPath = InputBox("Zoom","Define your new zoom folder","J:\zoom")
-	if $zoomPath == "" Then
-		Exit
+   $zoomPath = @MyDocumentsDir & "\zoom"
+;~ 	$zoomPath = InputBox("Zoom","Define your new zoom folder","h:\zoom")
+;~ 	if $zoomPath == "" Then
+;~ 		Exit
 	EndIf
-EndIf
-if FileExists($zoomPath) == 0 Then
-	if DirCreate($zoomPath)==0 Then
-		MsgBox(0,"ERROR","Failed to create directory: "&$zoomPath)
-		Exit
-	EndIf
-EndIf
+;~ 	RegWrite("HKEY_CURRENT_USER\Software\Zoom","zoomPath","REG_SZ",$zoomPath)
+;~  EndIf
+
+;~  $zoomPath = "C:\zoom" ;;used to force local when network isn't available
+
+DirCreate($zoomPath)
+
+;if FileExists($zoomPath) == 0 Then
+;	if DirCreate($zoomPath)==0 Then
+;		MsgBox(0,"ERROR","Failed to create directory: "&$zoomPath)
+;		Exit
+;	EndIf
+;EndIf
 
 if (RegRead("HKEY_CLASSES_ROOT\.zoo","")<>"Zoom") Then ;this should be less hostile
    FileExtAssoc("zoo", "C:\zoom\zoom.exe %1")
@@ -64,6 +75,8 @@ $cmdNumbers[0] = 0
 $jumpLines[0] = 0
 dim $var1Label = "testLabel"
 dim $var1On = 0
+dim $var2Label = "testLabel"
+dim $var2On = 0
 Global $menujump_link[10]
 Global $menujump = GUICtrlCreateMenu("Jump to...")
 Global $mode_rowsDeletes[20]
@@ -79,7 +92,7 @@ Global $GUI_zoom
 Global $GUI_zoomPre
 
 ;####### Commands options #########;
-Global $cmdTypes[4] = ["STR","RUN","CPY","RMV"]
+Global $cmdTypes[6] = ["STR","RUN","CPY","RMV","FRE","SCR"]
 
 ;####### Phases ###########;
 Global $phase1 = 1
@@ -104,8 +117,20 @@ global $modeCount = 0
 opt("GUIOnEventMode",1)
 
 
+if ($CmdLine[0] == 1 AND StringCompare($CmdLine[0],"clipboard")==0) Then
+;if (1) Then
 
-if $CmdLine[0] == 1 and FileExists($CmdLine[1]) Then
+   $fileName = @TempDir & "\temp.zoo"
+   FileWrite($fileName,"")
+   if WinExists("ZOOM CMD Window") Then
+		WinClose("ZOOM CMD Window")
+	EndIf
+   zoomMain()
+   commandAddFromClip()
+   gotoFirstCommand()
+   deleteCmd2()
+   $fileChanged = 0
+elseif $CmdLine[0] == 1 and FileExists($CmdLine[1]) Then
 ;~ 	MsgBox(0,"garrr",$CmdLine[1])
 	$fileName = $CmdLine[1]
 	;im guessing a batch file called this
@@ -134,7 +159,7 @@ EndIf
 Func updateGui()
 	if $fileVersion == 1 Then
 ;~ 		MsgBox(0,"file version is",$fileVersion)
-		updateGui1()
+;~ 		updateGui1()
 	ElseIf $fileVersion == 2 Then
 ;~ 		MsgBox(0,"file version is",$fileVersion)
 		updateGui2()
@@ -147,7 +172,8 @@ Func exitButton()
 ;~ 	MsgBox(0,"exit button!","grr")
 	if $fileVersion == 1 Then
 ;~ 		MsgBox(0,"file version is",$fileVersion)
-		exitButton1()
+;~ 		exitButton1()
+		 Exit
 	ElseIf $fileVersion >= 2 Then
 ;~ 		MsgBox(0,"file version is",$fileVersion)
 		exitButton2()
@@ -200,14 +226,17 @@ EndFunc
 
 
 #Region GUI Functions (Var1Toggle,TaskChange,cmdChange,changeZoomPath)
+Func displayHelpAutoIt()
+   ShellExecute("https://www.autoitscript.com/autoit3/docs/functions.htm");
+EndFunc
+
 Func displayHelp()
 
 ;~ 	dim $HK_send = "^w"
 ;~ 	dim $HK_inc = "^e"
 ;~ 	dim $HK_dec = "^q"
-	$hokeyString = "Hotkeys:"&@CRLF&"{ctrl}w  : Paste Command String and Go to Next Task"&@CRLF&"{ctrl}e  : Skip to Next Task"&@CRLF&"{ctrl}q  : Go back a Task"&@CRLF&@CRLF&"The different command types are"&@CRLF&"STR - this just types the string in"&@CRLF&"RUN - this runs the program just like a cmd line"&@CRLF&"CPY - This copies 1 file to another spot, use > in the center"&@CRLF&"RMV - This Removes the specified file. Be careful this accepts a * arg"
+	$hokeyString = "Hotkeys:"&@CRLF&"` (top left key) or {ctrl}w  : Perform Command String and Go to Next Task"&@CRLF&"{ctrl}e  : Skip to Next Task"&@CRLF&"{ctrl}q  : Go back a Task"&@CRLF&@CRLF&"The different command types are"&@CRLF&"STR - this just types the string in"&@CRLF&"RUN - this runs the program just like a cmd line"&@CRLF&"CPY - This copies 1 file to another spot, use > in the center"&@CRLF&"RMV - This Removes the specified file. Be careful this accepts a * arg"&@CRLF&"FRE - This reads from the first line of a file and sends it's text"&@CRLF&"SCR - runs the autoit code"
 	$helpString = "Zoom is a program created to help automate simple and complex tasks.  It may be hard to get use to at first but can help quite a bit" &@CRLF
-
 	MsgBox(0,"Zoom Help",$helpString &@CRLF& $hokeyString)
 
 
@@ -355,7 +384,9 @@ func initialize2()
 	WEnd
 
 
+   ConsoleWrite("$aSize is " & $aSize & @CRLF);
 	while $count <= $aSize
+	   ConsoleWrite ( "Ctr: " & $count & @CRLF)
 		if StringLeft($astrings[$count],13) == "*nextCommand*" then
 			_ArrayAdd($cmdNumbers, $count)
 			$cmdNumbers[0] +=1 ;inc the size
@@ -381,6 +412,7 @@ EndFunc
 Func pasteNext2()
 	;disable hotkeys
 	HotKeySet($HK_send)
+	HotKeySet($HK_send2)
 	HotKeySet($HK_dec)
 	HotKeySet($HK_inc)
 
@@ -395,13 +427,25 @@ Func pasteNext2()
 			$sendString = stringReplace($sendString,"$"&$modeList[$icount][$jcount],$modeList[$icount][$jcount],0,1)
 		Next
 	Next
-
-	send("{CTRLDOWN}")
-	send("{CTRLUP}")
+    if (_IsPressed(11)) Then
+	   send("{CTRLDOWN}")
+	   send("{CTRLUP}")
+	EndIf
 
 
    if GUICtrlRead($guiComboCmdTypes) == "RUN" Then
 		Run($sendString)
+   ElseIf GUICtrlRead($guiComboCmdTypes)== "FRE" Then
+		$fText = FileReadLine($sendString,$g_fLineCtr)
+		if (@error == 0) Then
+		   Send($fText)
+		   $g_fLineCtr = $g_fLineCtr+1
+		EndIf
+   ElseIf GUICtrlRead($guiComboCmdTypes)== "SCR" Then
+		;$fText = FileReadLine($sendString)
+		;if (@error == 0) Then
+		execute($sendString)
+		;EndIf
    ElseIf GUICtrlRead($guiComboCmdTypes)== "CPY" Then
 		$stringSplit = StringSplit($sendString,">")
 		if $stringSplit[0] == 2 Then
@@ -427,6 +471,7 @@ Func pasteNext2()
 
 	;enable hotkeys
 	HotKeySet($HK_send,"pasteNext"&$fileVersion)
+	HotKeySet($HK_send2,"pasteNext"&$fileVersion)
 	HotKeySet($HK_dec,"back"&$fileVersion)
 	HotKeySet($HK_inc,"forward"&$fileVersion)
 
@@ -436,9 +481,14 @@ EndFunc
 Func forward2()
 	$cmdNum +=1
 	if $cmdNum > $cmdNumbers[0] Then
-		$cmdNum = $cmdNumbers[0]
-		send("{CTRLUP}")
-		Return 1
+		 $cmdNum = $cmdNumbers[0]
+		 if ($LOOPING==True) Then
+			$cmdNum = 1
+		 Else
+		   send("{CTRLUP}")
+		   Return 1
+		 EndIf
+
 	EndIf
 
 	updateGui()
@@ -459,6 +509,11 @@ Func back2()
 	send("{CTRLUP}")
 
 EndFunc
+Func gotoFirstCommand()
+	 $cmdNum = 1
+	updateGui()
+EndFunc
+
 
 Func updateGui2()
 ;~ 	MsgBox(0,"cmdnum",$cmdNum)
@@ -524,15 +579,25 @@ Func insertCmdBefore2()
 	updateGui2()
 EndFunc
 
-Func insertCmdAfter2()
+Func insertCmdAfter2($input)
+    If Not IsDeclared("input") Then $input = "" ;since defaulting doesn't work with hotkey
 	$fileChanged = 1
 	GUICtrlSetState($menuitem_save, $GUI_ENABLE)
 	;keep $cmdNum the same so you can insert the new text
 ;~ 	MsgBox(0,"astrings Size",$astrings[0])
-	$x+=3
-	_ArrayInsert($astrings,$x,"*nextCommand*")
-	_ArrayInsert($astrings,$x+1,"pmt=")
-	_ArrayInsert($astrings,$x+2,"STR=")
+   $x+=3
+   ConsoleWrite("Array Size is " & $astrings[0] & @CRLF)
+   ConsoleWrite("$x is " & $x & @CRLF)
+
+   if ($astrings[0]+1 == $x) Then
+	   _ArrayAdd($astrings,"*nextCommand*")
+	   _ArrayAdd($astrings,"pmt=")
+	   _ArrayAdd($astrings,"STR="&$input)
+	Else
+	   _ArrayInsert($astrings,$x,"*nextCommand*")
+	   _ArrayInsert($astrings,$x+1,"pmt=")
+	   _ArrayInsert($astrings,$x+2,"STR="&$input)
+	EndIf
 
 	$astrings[0] +=3
 	$aSize = $astrings[0]
@@ -542,6 +607,38 @@ Func insertCmdAfter2()
 ;~ 	MsgBox(0,"cmdnum",$cmdNum)
 	updateGui2()
 
+EndFunc
+
+
+;for each line in the clipboard, make a new command
+func commandAddFromClip()
+   ;;TODO
+   MsgBox(0,"ERROR","In Development")
+
+;~     local $myInput = ClipGet()
+;~    Local $aArray = StringSplit($myInput,@crlf,$STR_NOCOUNT)
+;~    For $vElement In $aArray
+;~ 	  if (StringLen($vElement)>0) Then
+;~         insertCmdAfter2($vElement)
+;~ 	 EndIf
+;~     Next
+EndFunc
+
+func genFileClipboardText()
+   local $myInput = ClipGet()
+   Local $aArray = StringSplit($myInput,@crlf,$STR_NOCOUNT)
+   $retText = "zoomVersion=2"&@CRLF
+
+   For $vElement In $aArray
+	  if (StringLen($vElement)>0) Then
+;~         insertCmdAfter2($vElement)
+		 $retText &= "*nextCommand*"&@CRLF&"pmt="&@CRLF&"STR=" & $vElement&@CRLF
+	 EndIf
+
+;~ insertCmdAfter2("testComd")
+
+    Next
+	return $retText
 EndFunc
 
 Func deleteCmd2()
@@ -585,13 +682,14 @@ Func zoomPre()
 	;### GUI ###
 
 	Local $width = 200
-	Local $height = 100
+	Local $height = 130
 ;~ 	opt("GUIOnEventMode",1)
 	$GUI_zoomPre = GUICreate("Zoom", $width, $height,-1,-1,-1)
 	GUICtrlCreateLabel("V. "& $g_info_version,$width-45,0)
 ;~ 	GUICtrlSetColor(-1,0x7BE239)
-	$guiNewTask = GUICtrlCreateButton("Create New Task", $width*2/10,$height/9+5,$width*6/10,$height*3/9)
-	$guiLoadTask = GUICtrlCreateButton("Load Task", $width*2/10, $height*5/9+3,$width*6/10,$height*3/9)
+	$guiNewTask = GUICtrlCreateButton("Create New Task", $width*2/10,$height/9+5,$width*6/10,$height*3/10)
+	$guiLoadTask = GUICtrlCreateButton("Load Task", $width*2/10, $height*4/10+3,$width*6/10,$height*3/10)
+	$guiClipTask = GUICtrlCreateButton("Load Clipboard as Task", $width*2/10, $height*7/10+3,$width*6/10,$height*2/9)
 ;~ 	GUICtrlCreatePic("C:\zoom\logo.jpg",0,0,$width*5/10-5,$height)
 ;~ 	GUISetBkColor(0x000000)
 
@@ -599,12 +697,33 @@ Func zoomPre()
 ;~ 	GUICtrlSetBkColor($guiLoadTask,0x7BE239)
 	GUICtrlSetOnEvent($guiLoadTask,"loadZoom")
 	GUICtrlSetOnEvent($guiNewTask,"createNewZoom")
+	GUICtrlSetOnEvent($guiClipTask,"createClipboardZoom")
 	GUISetOnEvent($GUI_EVENT_CLOSE, "exitButton",$GUI_zoomPre)
 
 
 
 	GUISetState(@SW_SHOW)
 
+EndFunc
+
+func createClipboardZoom()
+
+   $fileName = @TempDir & "\temp.zoo"
+   $fileName = @MyDocumentsDir & "\Zoom\loadFromClipboard.zoo"
+
+
+   GUIDelete($GUI_zoomPre)
+
+   $file = FileOpen($fileName,2)
+	FileWrite($file,genFileClipboardText())
+	FileClose($file)
+   ;$OPTION_alwaysSave = true;
+   zoomMain()
+    alwaysSaveOption() ;turn the alwaysSave option on
+
+;~    commandAddFromClip()
+;~    gotoFirstCommand()
+   $fileChanged = 0
 EndFunc
 
 func createNewZoom()
@@ -629,8 +748,9 @@ func createNewZoom()
 	FileClose($file)
 	GUISetOnEvent($GUI_EVENT_CLOSE, "",$GUI_zoomPre)
 	GUIDelete($GUI_zoomPre)
-	zoomMain()
 
+	zoomMain()
+    alwaysSaveOption() ;default to true
 EndFunc
 
 Func loadZoom()
@@ -664,8 +784,8 @@ Func zoomMain()
 			EndIf
 
 		Else
-		MsgBox(4096,"Error", " Error reading log to Array     error:" & @error)
-		Exit
+		 MsgBox(4096,"Error", " Error reading log to Array     error:" & @error & @CRLF & $fileName)
+		 Exit
 		EndIf
 	EndIf
 	;_ArrayDisplay($astrings, "$avArray set manually 1D")
@@ -700,6 +820,7 @@ Func zoomMain()
 	AutoItSetOption ( "SendKeyDelay" ,0 )
 
 	HotKeySet($HK_send,"pasteNext"&$fileVersion)
+	HotKeySet($HK_send2,"pasteNext"&$fileVersion)
 	HotKeySet($HK_dec,"back"&$fileVersion)
 	HotKeySet($HK_inc,"forward"&$fileVersion)
 
@@ -707,7 +828,8 @@ Func zoomMain()
 	;### GUI ###
 ;~ 	opt("GUIOnEventMode",0)
 ;~ 	opt("GUIOnEventMode",1)
-	Global $GUI_zoom = GUICreate("Zoom - "& $fileName, $GUI_width, $GUI_height+20,0,0,-1,$WS_EX_TOPMOST)
+   $shortFileName = StringReplace($fileName,@MyDocumentsDir & "\Zoom\","");
+	Global $GUI_zoom = GUICreate("Zoom - "& $shortFileName, $GUI_width, $GUI_height+20,0,0,-1,$WS_EX_TOPMOST)
 	$test = GUISetOnEvent($GUI_EVENT_CLOSE, "exitButton",$GUI_zoom)
 ;~ 	MsgBox(0,"guisetonevent_result",$test)
 	GUICtrlCreateLabel("V. "& $g_info_version,450,10)
@@ -727,6 +849,9 @@ Func zoomMain()
 	  $tempCounter+=1
    WEnd
 
+   global $guiClickTarget = GUICtrlCreateButton(chrw(9678),20,165,20)
+    GUICtrlSetOnEvent($guiClickTarget,"modifyToClick")
+	GUICtrlSetTip($guiClickTarget,"Click button, after 1 second it will read mouse cord and insert into command","Script Mouse Click")
 
 
 	Global $guiCmd = GUICtrlCreateEdit("this is my command", 60, 140,380,60,$ES_MULTILINE)
@@ -748,11 +873,18 @@ Func zoomMain()
 	Global $guiDelCmd = GUICtrlCreateButton("Delete",315,110,40,30)
 	Global $guiWriteInsA = GUICtrlCreateButton("Insert New Command After",355,110,145,30)
 
-	Global $guiVar1preLabel = GUICtrlCreateLabel(" *var1* :",$GUI_width/6,20)
-	Global $guiVar1Input = GUICtrlCreateInput("",$GUI_width/6 +50,15,100)
-	Global $guiVar1Label = GUICtrlCreateLabel("12345678901234567",$GUI_width/6+155,20)
-	Global $guiVar1Toggle = GUICtrlCreateButton("Toggle Var1",$GUI_width-135,10)
+	Global $guiVar1preLabel = GUICtrlCreateLabel(" *var1* :",$GUI_width/6,5)
+	Global $guiVar1Input = GUICtrlCreateInput("",$GUI_width/6 +50,5,100)
+	Global $guiVar1Label = GUICtrlCreateLabel("12345678901234567",$GUI_width/6+155,5)
+;~ 	Global $guiVar1Toggle = GUICtrlCreateButton("Toggle Var1",$GUI_width-135,10)
 	GUICtrlSetData($guiVar1Label,$var1Label)
+
+	  $var2OffsetY = 20;
+	Global $guiVar2preLabel = GUICtrlCreateLabel(" *var2* :",$GUI_width/6,5+$var2OffsetY)
+	Global $guiVar2Input = GUICtrlCreateInput("",$GUI_width/6 +50,5+$var2OffsetY,100)
+	Global $guiVar2Label = GUICtrlCreateLabel("12345678901234567",$GUI_width/6+155,5+$var2OffsetY)
+;~ 	Global $guiVar2Toggle = GUICtrlCreateButton("Toggle Var2",$GUI_width-135,10+$var2OffsetY)
+	GUICtrlSetData($guiVar2Label,$var2Label)
 
 ;~ 	GUICtrlSetLimit($guiVar1Label,10)
 
@@ -764,6 +896,12 @@ Func zoomMain()
 	Else
 ;~ 		GUICtrlSetState($guiVar1Toggle,$GUI_HIDE)
 	EndIf
+	if $var2On == 0 Then
+		GUICtrlSetState($guiVar2Input,$GUI_HIDE)
+		GUICtrlSetState($guiVar2Label,$GUI_HIDE)
+		GUICtrlSetState($guiVar2preLabel,$GUI_HIDE)
+
+	EndIf
 
 	GUICtrlSetOnEvent ( $guiWritePmt, "savepmt"&$fileVersion)
 	GUICtrlSetOnEvent ( $guiWriteCmd, "savecmd"&$fileVersion)
@@ -771,7 +909,8 @@ Func zoomMain()
 	GUICtrlSetOnEvent ( $guiDelCmd, "deleteCmd"&$fileVersion)
 	GUICtrlSetOnEvent ( $guiWriteInsA, "insertCmdAfter"&$fileVersion)
 
-	GUICtrlSetOnEvent($guiVar1Toggle,"var1Toggle")
+;~ 	GUICtrlSetOnEvent($guiVar1Toggle,"var1Toggle")
+;~ 	GUICtrlSetOnEvent($guiVar2Toggle,"var2Toggle")
 
 
 ;######## MENU ########
@@ -794,6 +933,7 @@ Func zoomMain()
 	Global $menuitem_nextCommand = GUICtrlCreateMenuItem("next command (ctrl+e)", $menucommand)
 	Global $menuitem_prevCommand = GUICtrlCreateMenuItem("prev command (ctrl+q)", $menucommand)
 	Global $menuitem_runCommand = GUICtrlCreateMenuItem("run command (ctrl+w)", $menucommand)
+	Global $menuitem_addClipboardCommand = GUICtrlCreateMenuItem("Add commands from Clip", $menucommand)
 
 
 	loadJumpMenu()
@@ -806,6 +946,7 @@ Func zoomMain()
 
 
 	Global $menuitem_genHelp = GUICtrlCreateMenuItem("Help", $menuhelp)
+	Global $menuitem_helpAutoIt = GUICtrlCreateMenuItem("AutoIt Functions", $menuhelp)
 ;~ 	Global $menuitem_zoomPath = GUICtrlCreateMenuItem("Change Zoom Folder", $menuoptions)
 ;~ 	GUICtrlSetState(-1, $GUI_CHECKED)
 	GUICtrlSetOnEvent ( $menuitem_alwaysSave, "alwaysSaveOption")
@@ -813,9 +954,11 @@ Func zoomMain()
 	GUICtrlSetOnEvent ( $menuitem_nextCommand, "forward2")
 	GUICtrlSetOnEvent ( $menuitem_prevCommand, "back2")
 	GUICtrlSetOnEvent ( $menuitem_runCommand, "pasteNext2")
+	GUICtrlSetOnEvent ( $menuitem_addClipboardCommand, "commandAddFromClip")
 
 
 	GUICtrlSetOnEvent ( $menuitem_genHelp, "displayHelp")
+	GUICtrlSetOnEvent ( $menuitem_helpAutoIt, "displayHelpAutoIt")
 ;~ 	GUICtrlSetOnEvent ( $menuitem_zoomPath, "changeZoomPath")
 	GUICtrlSetOnEvent ( $menuitem_save, "saveZoom")
 	GUICtrlSetOnEvent ( $menuitem_exit, "exitButton")
@@ -835,6 +978,23 @@ Func zoomMain()
 ;~ 	while 1
 ;~ 		sleep(100)
 ;~ 	WEnd
+EndFunc
+
+
+;will wait until user unclicks and it will save that coord
+func modifyToClick()
+;~    while _IsPressed("01")
+
+;~ 	  sleep(10)
+;~    WEnd
+   sleep(1000)
+   local $posx = MouseGetPos(0)
+   local $posy = MouseGetPos(1)
+
+   local $newCmd = 'MouseClick("left",' & $posx & ',' & $posy & ',1,0)'
+   ConsoleWrite("new command"  & $newCmd & @CRLF)
+   GUICtrlSetData($guiCmd,$newCmd)
+   GUICtrlSetData($guiComboCmdTypes,"SCR")
 EndFunc
 
 func menuModes_load()
@@ -871,6 +1031,10 @@ Func loadVars()
 	  if StringLeft($astrings[$lineCounter],5) == "var1=" then
 		 $var1On = 1
 		 $var1Label = StringTrimLeft($astrings[$lineCounter],5)
+	  EndIf
+	  if StringLeft($astrings[$lineCounter],5) == "var2=" then
+		 $var2On = 1
+		 $var2Label = StringTrimLeft($astrings[$lineCounter],5)
 	  EndIf
 
 	  if StringInStr($astrings[$lineCounter],"*nextCommand*") Then
@@ -1343,8 +1507,8 @@ EndFunc
 ;~ FileExtAssoc("zoo", "C:\zoom\zoom.exe %1")
 
 func FileExtAssoc($sExt, $sApplication)
-    RunWait(@COMSPEC & " /c ASSOC ." & $sExt & "=Zoom", "", @SW_HIDE)
-    RunWait(@COMSPEC & " /c FTYPE Zoom=" & $sApplication , "", @SW_HIDE)
+    Run(@COMSPEC & " /c ASSOC ." & $sExt & "=Zoom", "", @SW_HIDE)
+    Run(@COMSPEC & " /c FTYPE Zoom=" & $sApplication , "", @SW_HIDE)
 ;~     MsgBox(0,"File Extension Application Association",'"' & $sExt & '"is now asscoiated with "' & $sApplication & '"',3)
 EndFunc
 
