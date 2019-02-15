@@ -11,8 +11,8 @@ dim $LOOPING = true;
 ;#Include <Misc.au3>;for _IsPressed
 
 #Region version and program info
-Global Const $g_info_version = "0.5.10"
-Global Const $g_info_author = "Trevor Pearson"
+Global Const $g_info_version = "0.5.11"
+Global Const $g_info_author = "Trevor Pearson (tjpearson@gmail.com)"
 Global Const $g_info_parameters = "Optional: first arg can point to a zoom instruction (.zoo or .txt)"
 Global Const $g_info_instructions = "This program reads a txt file and will type strings for the user.  Basically, it semi-automate complex tasks.  Prompts are also inputed from the file to explain what to do next."
 if $CmdLine[0] == 1 Then
